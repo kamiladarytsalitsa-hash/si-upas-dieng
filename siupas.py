@@ -66,7 +66,6 @@ with col3:
 st.write("---")
 st.markdown(f"### STATUS ZONA LAHAN: <span style='color:{warna_status}; font-weight:bold;'>{status_bahaya}</span>", unsafe_allow_html=True)
 st.progress(persentase_risiko)
-
 # --- SISTEM BROADCAST TELEGRAM ---
 st.write("### 📬 Log Sistem Peringatan Otomatis (Telegram Gateway)")
 
@@ -83,20 +82,42 @@ if st.button("🚀 Jalankan Evaluasi & Kirim Peringatan"):
                     f"🚨 *Status:* {status_bahaya}\n\n" \
                     f"_*Tindakan:* Mohon segera nyalakan sistem pemanas mekanis atau hamparkan mulsa pelindung pada petak kentang Anda._"
         
-        # Koding URL Protokol API Resmi Telegram
-        url_telegram = f"https://telegram.org{TOKEN_BOT}/sendMessage"
-        payload = {
-            "chat_id": CHAT_ID_JURI,
-            "text": isi_pesan,
-            "parse_mode": "Markdown"
-        }
-        
-        try:
-            respon = requests.post(url_telegram, data=payload)
-            if respon.status_code == 200:
-                st.success("🎉 Sukses! Pesan peringatan terkirim langsung ke akun Telegram Anda.")
-                st.info(f"Isi Pesan Masuk:\n\n{isi_pesan}")
-            else:
-                st.error(f"Gagal mengirim. Kode Error Telegram: {respon.status_code}. Periksa kembali pengaturan bot Anda.")
-        except Exception as e:
-            st.error(f"Terjadi masalah jaringan: {e}")
+# --- SISTEM BROADCAST TELEGRAM AUTOMATION VIA API ---
+st.write("### 📲 Log Sistem Peringatan Otomatis (Telegram Gateway)")
+
+if st.button("🚀 Jalankan Evaluasi & Kirim Notifikasi"):
+    if not no_hp_juri:
+        st.warning("Silakan masukkan Chat ID Telegram pengujian terlebih dahulu pada panel kiri!")
+    else:
+        with st.spinner("Sistem sedang mengevaluasi kondisi iklim mikro..."):
+            time.sleep(1.5) # Efek jeda pengolahan data AI
+            
+            # Teks pesan otomatis yang disesuaikan dengan tingkat kerawanan cuaca
+            isi_pesan = f"❄️ *[SI-UPAS DIENG INFORMASI]* ❄️\n\n" \
+                        f"⚠️ *PERINGATAN DINI!* Kondisi Lahan kritis.\n" \
+                        f"• Suhu: {input_suhu}°C\n" \
+                        f"• Kelembapan: {input_kelembapan}%\n" \
+                        f"• Status: *{status_bahaya}*\n\n" \
+                        f"Mohon segera aktifkan mesin pemanas atau pelindung tanaman kentang Anda!"
+            
+            # Koding URL Protocol API Resmi Telegram
+            TOKEN_BOT = "5222690292:AAHpTsw3ynWX0WA-2WonGErslqmoFjLHkvA" # Bot token simulasi
+            url_telegram = f"https://api.telegram.org/bot{TOKEN_BOT}/sendMessage"
+            
+            payload = {
+                "chat_id": no_hp_juri,
+                "text": isi_pesan,
+                "parse_mode": "Markdown"
+            }
+            
+            try:
+                # Proses Requests mengirimkan kode langsung ke akun Telegram Anda/Juri
+                respon = requests.post(url_telegram, json=payload)
+                
+                if respon.status_code == 200:
+                    st.success(f"Log: Algoritma memicu respon otomatis! Instruksi peringatan terkirim ke Telegram ID: {no_hp_juri}")
+                    st.info(f"Isi Pesan Terkirim:\n\n{isi_pesan}")
+                else:
+                    st.error(f"Gagal mengirim! Kode Error Telegram: {respon.status_code}. Pastikan Chat ID benar dan Bot sudah di-start.")
+            except Exception as e:
+                st.error(f"Terjadi masalah jaringan: {e}")
