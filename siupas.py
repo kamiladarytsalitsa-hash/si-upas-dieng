@@ -16,7 +16,7 @@ st.set_page_config(
 
 # Masukkan token bot Telegram BARU di sini.
 # Jangan unggah token asli ke repositori GitHub.
-TELEGRAM_BOT_TOKEN = "MASUKKAN_TOKEN_BOT_BARU"
+TELEGRAM_BOT_TOKEN = "8954962424:AAGJKj6D9ZE-44iYeoLub9fqObfF3Xju3SY"
 TELEGRAM_CHAT_ID = "6778628136"
 
 # Koordinat perkiraan kawasan Dieng
