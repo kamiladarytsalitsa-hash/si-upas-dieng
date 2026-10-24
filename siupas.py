@@ -1,7 +1,18 @@
 import streamlit as st
 import math
 import time
+import streamlit as st
+import requests
 
+# Koordinat Dataran Tinggi Dieng
+LATITUDE = -7.2062
+LONGITUDE = 109.9198
+# Mengambil data cuaca saat ini secara otomatis
+url = f"https://open-meteo.com{LATITUDE}&longitude={LONGITUDE}&current=temperature_2m,relative_humidity_2m&timezone=Asia%2FJakarta"response = requests.get(url).json()
+
+# Membaca suhu dan kelembapan terbaru dari internet
+suhu_sekarang = response['current']['temperature_2m']
+kelembapan_sekarang = response['current']['relative_humidity_2m']
 # --- PENGATURAN HALAMAN DASHBOARD ---
 st.set_page_config(page_title="Si-Upas Dieng", page_icon="❄️", layout="wide")
 
@@ -71,3 +82,12 @@ st.write("---")
 # --- PANEL REKOMENDASI OTOMATIS DI LAYAR ---
 st.markdown("### 📋 Panduan Tindakan Otomatis untuk Petani:")
 st.info(rekomendasi_tani)
+
+# Halaman akan otomatis membaca data baru dari API setiap 10 menit (600 detik)
+st.fragment(run_every=600)
+def update_data_cuaca():
+    # Masukkan logika if-else mitigasi embun upas Anda di sini
+    if suhu_sekarang <= 4.0:
+        st.error(f"⚠️ PERINGATAN: Suhu Dieng {suhu_sekarang}°C. Embun Upas Berpotensi Muncul!")
+    else:
+        st.success(f"✅ AMAN: Suhu Dieng {suhu_sekarang}°C. Kondisi cenderung normal.")
