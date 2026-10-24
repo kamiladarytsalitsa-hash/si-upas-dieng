@@ -1,11 +1,13 @@
+
 import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
-# ============================================================
-# 1. PENGATURAN HALAMAN
-# ============================================================
+# =====================================================
+# 1. KONFIGURASI APLIKASI
+# =====================================================
 
 st.set_page_config(
     page_title="Si-Upas Dieng",
@@ -14,436 +16,357 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ============================================================
-# 2. KONFIGURASI LOKASI DIENG
-# ============================================================
+WIB = ZoneInfo("Asia/Jakarta")
+LATITUDE = -7.2048
+LONGITUDE = 109.9156
 
-DIENG_LAT = -7.2048
-DIENG_LON = 109.9156
+# =====================================================
+# 2. AMBIL DATA PRAKIRAAN CUACA
+# =====================================================
 
-# ============================================================
-# 3. FUNGSI MENGAMBIL DATA CUACA
-# ============================================================
-
-@st.cache_data(ttl=3600)
-def get_weather_data():
-    """
-    Mengambil data prakiraan cuaca dari Open-Meteo.
-    Data diperbarui secara berkala oleh API.
-    """
-
+@st.cache_data(ttl=900)
+def ambil_cuaca():
     url = "https://api.open-meteo.com/v1/forecast"
 
     params = {
-        "latitude": DIENG_LAT,
-        "longitude": DIENG_LON,
+        "latitude": LATITUDE,
+        "longitude": LONGITUDE,
         "hourly": "temperature_2m,relative_humidity_2m",
         "forecast_days": 2,
         "timezone": "Asia/Jakarta"
     }
 
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
+    response = requests.get(
+        url,
+        params=params,
+        timeout=15
+    )
+    response.raise_for_status()
 
-        data = response.json()
+    data = response.json()["hourly"]
 
-        df = pd.DataFrame({
-            "Waktu": pd.to_datetime(data["hourly"]["time"]),
-            "Suhu": data["hourly"]["temperature_2m"],
-            "Kelembapan": data["hourly"]["relative_humidity_2m"]
-        })
-
-        return df
-
-    except Exception as e:
-        return None
+    return pd.DataFrame({
+        "Waktu": pd.to_datetime(data["time"]),
+        "Suhu (°C)": data["temperature_2m"],
+        "Kelembapan (%)": data["relative_humidity_2m"]
+    })
 
 
-# ============================================================
-# 4. FUNGSI ANALISIS RISIKO
-# ============================================================
+# =====================================================
+# 3. ANALISIS RISIKO
+# =====================================================
 
 def analisis_risiko(suhu, kelembapan):
-
-    # Risiko sangat tinggi
     if suhu <= 0 and kelembapan >= 80:
         return {
             "status": "RISIKO SANGAT TINGGI",
-            "warna": "error",
-            "emoji": "🚨",
+            "level": 3,
             "pesan": (
                 "Suhu berada pada atau di bawah titik beku "
-                "disertai kelembapan tinggi. Risiko pembentukan "
-                "frost/embun upas sangat tinggi."
+                "dan kelembapan tinggi. Risiko frost perlu "
+                "segera diperiksa."
             ),
             "tindakan": (
-                "Segera lakukan tindakan perlindungan tanaman "
-                "sesuai metode mitigasi yang tersedia."
+                "Periksa kondisi tanaman dan suhu permukaan "
+                "lahan. Siapkan mitigasi yang sesuai."
             )
         }
 
-    # Risiko tinggi
     elif suhu <= 4 and kelembapan >= 80:
         return {
             "status": "SIAGA",
-            "warna": "warning",
-            "emoji": "⚠️",
+            "level": 2,
             "pesan": (
                 "Suhu rendah dan kelembapan tinggi. "
-                "Kondisi mendukung peningkatan risiko embun upas."
+                "Tingkatkan kewaspadaan terhadap embun upas."
             ),
             "tindakan": (
-                "Petani disarankan meningkatkan pemantauan "
-                "dan menyiapkan sistem mitigasi."
+                "Pantau kondisi lahan dan siapkan "
+                "langkah perlindungan tanaman."
             )
         }
 
-    # Risiko sedang
     elif suhu <= 6 and kelembapan >= 75:
         return {
             "status": "WASPADA",
-            "warna": "warning",
-            "emoji": "🟡",
+            "level": 1,
             "pesan": (
-                "Suhu mulai rendah dengan kelembapan cukup tinggi. "
-                "Potensi risiko perlu dipantau."
+                "Suhu relatif rendah dan kelembapan cukup "
+                "tinggi. Kondisi perlu dipantau."
             ),
             "tindakan": (
-                "Pantau perubahan suhu dan kelembapan terutama "
-                "pada malam hingga dini hari."
+                "Pantau perubahan cuaca terutama malam "
+                "hingga dini hari."
             )
         }
 
-    # Aman
-    else:
-        return {
-            "status": "AMAN",
-            "warna": "success",
-            "emoji": "✅",
-            "pesan": (
-                "Parameter cuaca saat ini belum menunjukkan "
-                "indikasi risiko tinggi embun upas."
-            ),
-            "tindakan": (
-                "Tetap lakukan pemantauan berkala terhadap "
-                "perubahan kondisi cuaca."
-            )
-        }
+    return {
+        "status": "AMAN",
+        "level": 0,
+        "pesan": (
+            "Parameter belum memenuhi ambang peringatan "
+            "dalam prototype ini."
+        ),
+        "tindakan": "Lanjutkan pemantauan secara berkala."
+    }
 
 
-# ============================================================
-# 5. HEADER
-# ============================================================
+# =====================================================
+# 4. KIRIM NOTIFIKASI TELEGRAM
+# =====================================================
+
+def kirim_telegram(pesan):
+    try:
+        token = st.secrets["TELEGRAM_BOT_TOKEN"]
+        chat_id = st.secrets["TELEGRAM_CHAT_ID"]
+
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+
+        response = requests.post(
+            url,
+            data={
+                "chat_id": str(chat_id),
+                "text": pesan
+            },
+            timeout=15
+        )
+
+        hasil = response.json()
+
+        if response.ok and hasil.get("ok"):
+            return True, "Notifikasi berhasil dikirim ke Telegram."
+
+        return False, hasil.get(
+            "description",
+            "Telegram gagal mengirim pesan."
+        )
+
+    except KeyError:
+        return False, (
+            "Token atau Chat ID belum diatur di secrets.toml."
+        )
+
+    except requests.RequestException:
+        return False, (
+            "Koneksi Telegram gagal. Periksa internet."
+        )
+
+    except Exception:
+        return False, (
+            "Terjadi kesalahan saat mengirim notifikasi."
+        )
+
+
+def buat_pesan(suhu, kelembapan, hasil, waktu):
+    return (
+        "❄️ SI-UPAS DIENG\n"
+        "PERINGATAN DINI EMBUN UPAS\n\n"
+        f"Status: {hasil['status']}\n"
+        f"Suhu: {suhu:.1f} °C\n"
+        f"Kelembapan: {kelembapan:.0f}%\n"
+        f"Waktu: {waktu}\n\n"
+        f"Analisis: {hasil['pesan']}\n\n"
+        f"Rekomendasi: {hasil['tindakan']}\n\n"
+        "Catatan: Status merupakan hasil analisis "
+        "prototype, bukan konfirmasi embun upas."
+    )
+
+
+# =====================================================
+# 5. HEADER DAN SIDEBAR
+# =====================================================
 
 st.title("❄️ Si-Upas Dieng")
-
 st.subheader(
     "Sistem Informasi Peringatan Dini Risiko Embun Upas "
-    "untuk Komoditas Kentang"
+    "untuk Pertanian Kentang"
 )
+st.caption(
+    "Pemantauan cuaca • Analisis risiko • Notifikasi Telegram"
+)
+st.divider()
 
-st.markdown("---")
-
-
-# ============================================================
-# 6. SIDEBAR
-# ============================================================
-
-st.sidebar.title("🎛️ Panel Sistem")
+st.sidebar.title("🎛️ Panel Si-Upas")
 
 mode = st.sidebar.radio(
-    "Mode Tampilan",
+    "Pilih mode aplikasi:",
     [
-        "Otomatis",
-        "Simulasi Juri"
+        "Otomatis - Prakiraan Cuaca",
+        "Manual - Simulasi Juri"
     ]
 )
 
-st.sidebar.markdown("---")
-
 st.sidebar.info(
-    "Si-Upas merupakan prototype sistem peringatan dini "
-    "yang menganalisis suhu dan kelembapan untuk membantu "
-    "petani meningkatkan kesiapsiagaan terhadap risiko embun upas."
+    "Mode otomatis menggunakan prakiraan Open-Meteo. "
+    "Mode manual digunakan untuk menguji logika sistem."
 )
 
+# =====================================================
+# 6. DATA OTOMATIS ATAU SIMULASI
+# =====================================================
 
-# ============================================================
-# 7. MODE OTOMATIS
-# ============================================================
+df = None
 
-if mode == "Otomatis":
+if mode == "Otomatis - Prakiraan Cuaca":
+    st.header("📡 Pemantauan Prakiraan Cuaca Dieng")
 
-    st.header("📡 Pemantauan Cuaca Dieng")
+    try:
+        df = ambil_cuaca()
 
-    data = get_weather_data()
+        sekarang = pd.Timestamp(
+            datetime.now(WIB).replace(tzinfo=None)
+        )
 
-    if data is None:
+        mendatang = df[df["Waktu"] >= sekarang]
 
+        if mendatang.empty:
+            st.error("Data prakiraan untuk waktu mendatang tidak tersedia.")
+            st.stop()
+
+        baris = mendatang.iloc[0]
+
+        suhu = float(baris["Suhu (°C)"])
+        kelembapan = float(baris["Kelembapan (%)"])
+        waktu = baris["Waktu"].strftime("%d-%m-%Y %H:%M WIB")
+
+    except Exception:
         st.error(
-            "❌ Data cuaca tidak dapat diambil. "
-            "Periksa koneksi internet kemudian coba lagi."
+            "Data cuaca gagal diambil. Periksa koneksi internet "
+            "atau coba muat ulang aplikasi."
         )
+        st.stop()
 
-    else:
-
-        # Ambil data saat ini
-        sekarang = datetime.now()
-
-        data["selisih"] = abs(
-            data["Waktu"] - pd.Timestamp(sekarang)
-        )
-
-        data_sekarang = data.loc[
-            data["selisih"].idxmin()
-        ]
-
-        suhu = float(data_sekarang["Suhu"])
-        kelembapan = float(data_sekarang["Kelembapan"])
-
-        hasil = analisis_risiko(
-            suhu,
-            kelembapan
-        )
-
-        # ====================================================
-        # METRIC
-        # ====================================================
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.metric(
-                "🌡️ Suhu",
-                f"{suhu:.1f} °C"
-            )
-
-        with col2:
-            st.metric(
-                "💧 Kelembapan",
-                f"{kelembapan:.0f} %"
-            )
-
-        with col3:
-            st.metric(
-                "📍 Lokasi",
-                "Dieng"
-            )
-
-        st.markdown("---")
-
-        # ====================================================
-        # STATUS
-        # ====================================================
-
-        st.subheader("📢 Status Sistem")
-
-        if hasil["warna"] == "error":
-
-            st.error(
-                f"{hasil['emoji']} **{hasil['status']}**\n\n"
-                f"{hasil['pesan']}"
-            )
-
-        elif hasil["warna"] == "warning":
-
-            st.warning(
-                f"{hasil['emoji']} **{hasil['status']}**\n\n"
-                f"{hasil['pesan']}"
-            )
-
-        else:
-
-            st.success(
-                f"{hasil['emoji']} **{hasil['status']}**\n\n"
-                f"{hasil['pesan']}"
-            )
-
-        st.info(
-            f"💡 **Rekomendasi:** {hasil['tindakan']}"
-        )
-
-        # ====================================================
-        # GRAFIK
-        # ====================================================
-
-        st.markdown("---")
-
-        st.subheader("📈 Prakiraan Suhu 24 Jam")
-
-        grafik = data.head(24).copy()
-
-        grafik = grafik.set_index("Waktu")
-
-        st.line_chart(
-            grafik["Suhu"]
-        )
-
-        st.subheader("💧 Prakiraan Kelembapan 24 Jam")
-
-        st.line_chart(
-            grafik["Kelembapan"]
-        )
-
-        # ====================================================
-        # TABEL DATA
-        # ====================================================
-
-        with st.expander("🔎 Lihat Data Prakiraan"):
-
-            tampil = data.head(24)[
-                ["Waktu", "Suhu", "Kelembapan"]
-            ].copy()
-
-            tampil["Suhu"] = tampil["Suhu"].round(1)
-
-            tampil["Kelembapan"] = (
-                tampil["Kelembapan"].round(0)
-            )
-
-            st.dataframe(
-                tampil,
-                use_container_width=True
-            )
-
-        st.caption(
-            "Sumber data prakiraan: Open-Meteo. "
-            "Data digunakan sebagai bagian dari prototype sistem."
-        )
-
-
-# ============================================================
-# 8. MODE SIMULASI JURI
-# ============================================================
+    st.caption("Sumber: Open-Meteo — data prakiraan, bukan sensor langsung.")
 
 else:
+    st.header("🧪 Simulasi Pengujian Juri")
 
-    st.header("🧪 Mode Simulasi Pengujian")
-
-    st.write(
-        "Mode ini digunakan untuk menunjukkan bagaimana "
-        "sistem Si-Upas mengambil keputusan berdasarkan "
-        "suhu dan kelembapan yang dimasukkan oleh pengguna."
-    )
-
-    st.sidebar.subheader("⚙️ Parameter Simulasi")
-
-    input_suhu = st.sidebar.slider(
-        "🌡️ Suhu Udara (°C)",
+    suhu = st.sidebar.slider(
+        "Suhu udara (°C)",
         min_value=-10.0,
         max_value=25.0,
         value=2.0,
         step=0.5
     )
 
-    input_kelembapan = st.sidebar.slider(
-        "💧 Kelembapan (%)",
+    kelembapan = st.sidebar.slider(
+        "Kelembapan udara (%)",
         min_value=0,
         max_value=100,
         value=90,
         step=1
     )
 
-    # ========================================================
-    # HASIL ANALISIS
-    # ========================================================
+    waktu = datetime.now(WIB).strftime("%d-%m-%Y %H:%M WIB")
 
-    hasil = analisis_risiko(
-        input_suhu,
-        input_kelembapan
+    st.caption("Sumber: parameter simulasi yang dimasukkan pengguna.")
+
+# =====================================================
+# 7. METRIK UTAMA
+# =====================================================
+
+hasil = analisis_risiko(suhu, kelembapan)
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("🌡️ Suhu", f"{suhu:.1f} °C")
+col2.metric("💧 Kelembapan", f"{kelembapan:.0f}%")
+col3.metric("📍 Lokasi", "Dieng")
+
+st.caption(f"Waktu pemeriksaan: {waktu}")
+st.divider()
+
+# =====================================================
+# 8. STATUS DAN REKOMENDASI
+# =====================================================
+
+st.subheader("📢 Hasil Analisis Sistem")
+
+if hasil["level"] == 3:
+    st.error(f"🚨 **{hasil['status']}**\n\n{hasil['pesan']}")
+
+elif hasil["level"] in (1, 2):
+    st.warning(f"⚠️ **{hasil['status']}**\n\n{hasil['pesan']}")
+
+else:
+    st.success(f"✅ **{hasil['status']}**\n\n{hasil['pesan']}")
+
+st.info(f"💡 **Rekomendasi:** {hasil['tindakan']}")
+
+# =====================================================
+# 9. NOTIFIKASI TELEGRAM
+# =====================================================
+
+st.divider()
+st.subheader("📱 Notifikasi ke HP Petani")
+
+if hasil["level"] >= 1:
+    st.write(
+        "Sistem mendeteksi kondisi yang perlu diwaspadai. "
+        "Kirimkan informasi ini ke Telegram petani."
     )
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        st.metric(
-            "🌡️ Suhu Pengujian",
-            f"{input_suhu:.1f} °C"
+    if st.button(
+        "📨 Kirim Peringatan Telegram",
+        type="primary",
+        use_container_width=True
+    ):
+        pesan = buat_pesan(
+            suhu,
+            kelembapan,
+            hasil,
+            waktu
         )
 
-    with col2:
+        with st.spinner("Mengirim notifikasi..."):
+            berhasil, keterangan = kirim_telegram(pesan)
 
-        st.metric(
-            "💧 Kelembapan Pengujian",
-            f"{input_kelembapan}%"
-        )
+        if berhasil:
+            st.success(keterangan)
+        else:
+            st.error(keterangan)
 
-    st.markdown("---")
-
-    st.subheader("📢 Hasil Analisis Sistem")
-
-    if hasil["warna"] == "error":
-
-        st.error(
-            f"{hasil['emoji']} **{hasil['status']}**\n\n"
-            f"{hasil['pesan']}"
-        )
-
-    elif hasil["warna"] == "warning":
-
-        st.warning(
-            f"{hasil['emoji']} **{hasil['status']}**\n\n"
-            f"{hasil['pesan']}"
-        )
-
-    else:
-
-        st.success(
-            f"{hasil['emoji']} **{hasil['status']}**\n\n"
-            f"{hasil['pesan']}"
-        )
-
-    st.info(
-        f"💡 **Rekomendasi Sistem:** {hasil['tindakan']}"
+else:
+    st.success(
+        "Status AMAN menurut ambang prototype. "
+        "Notifikasi peringatan tidak diperlukan."
     )
 
-    # ========================================================
-    # TABEL KLASIFIKASI
-    # ========================================================
+# =====================================================
+# 10. GRAFIK DAN TABEL PRAKIRAAN
+# =====================================================
 
-    st.markdown("---")
+if df is not None:
+    st.divider()
+    st.subheader("📈 Prakiraan Cuaca 24 Jam")
 
-    st.subheader("📋 Matriks Klasifikasi Risiko")
+    grafik = df.head(24).set_index("Waktu")
 
-    tabel_risiko = pd.DataFrame({
-        "Kondisi": [
-            "Suhu > 6°C",
-            "Suhu 4–6°C + kelembapan ≥75%",
-            "Suhu 0–4°C + kelembapan ≥80%",
-            "Suhu ≤0°C + kelembapan ≥80%"
-        ],
+    st.write("Perubahan suhu")
+    st.line_chart(grafik[["Suhu (°C)"]])
 
-        "Status": [
-            "AMAN",
-            "WASPADA",
-            "SIAGA",
-            "RISIKO SANGAT TINGGI"
-        ],
+    st.write("Perubahan kelembapan")
+    st.line_chart(grafik[["Kelembapan (%)"]])
 
-        "Tindakan": [
-            "Pemantauan rutin",
-            "Tingkatkan pemantauan",
-            "Siapkan mitigasi",
-            "Segera lakukan mitigasi"
-        ]
-    })
+    with st.expander("Lihat tabel prakiraan cuaca"):
+        st.dataframe(
+            df.head(24),
+            use_container_width=True,
+            hide_index=True
+        )
 
-    st.dataframe(
-        tabel_risiko,
-        use_container_width=True,
-        hide_index=True
-    )
+# =====================================================
+# 11. FOOTER
+# =====================================================
 
-
-# ============================================================
-# 9. FOOTER
-# ============================================================
-
-st.markdown("---")
+st.divider()
 
 st.caption(
-    "© 2026 Tim Krenova — Si-Upas "
-    "(Sistem Informasi Mitigasi Dampak Embun Es Dieng)"
+    "© 2026 Tim Krenova — Si-Upas Dieng"
+)
+st.caption(
+    "Ambang risiko merupakan parameter awal yang perlu "
+    "divalidasi dengan data historis dan pengukuran lapangan. "
+    "Suhu serta kelembapan udara saja tidak memastikan "
+    "terjadinya embun upas."
 )
